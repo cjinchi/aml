@@ -2,20 +2,29 @@ import torch
 from transformers import BertForSequenceClassification, AdamW, BertTokenizer,TrainingArguments,Trainer
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support,roc_auc_score
+import numpy as np
 
 label_encode_dict = {'fit': 0, 'large': 1, 'small': 2}
+
+def to_one_hot(a):
+    b = np.zeros((a.size, 3))
+    b[np.arange(a.size), a] = 1
+    return b
 
 def compute_metrics(pred):
     labels = pred.label_ids
     preds = pred.predictions.argmax(-1)
-    precision, recall, f1, _ = precision_recall_fscore_support(labels, preds, average='binary')
+    preds_one_hot = to_one_hot(preds)
+    precision, recall, f1, _ = precision_recall_fscore_support(labels, preds, average='macro')
     acc = accuracy_score(labels, preds)
+    auc = roc_auc_score(np.asarray(labels),preds_one_hot,multi_class='ovr')
     return {
         'accuracy': acc,
         'f1': f1,
         'precision': precision,
-        'recall': recall
+        'recall': recall,
+        'auc':auc
     }
 
 
@@ -45,7 +54,7 @@ def read_train_data():
 
 if __name__ == '__main__':
     texts, labels = read_train_data()
-    train_texts, val_texts, train_labels, val_labels = train_test_split(texts[:100], labels[:100], test_size=0.2)
+    train_texts, val_texts, train_labels, val_labels = train_test_split(texts, labels, test_size=0.2)
 
     tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
     train_encodings = tokenizer(train_texts, truncation=True, padding=True)
@@ -55,10 +64,10 @@ if __name__ == '__main__':
     val_dataset = ReviewDataset(val_encodings,val_labels)
 
     training_args = TrainingArguments(
-        output_dir='./model',
+        output_dir='./model/model1',
         num_train_epochs=3,
-        per_device_train_batch_size=5,
-        per_device_eval_batch_size=20,
+        per_device_train_batch_size=64,
+        per_device_eval_batch_size=64,
         warmup_steps=500,
         weight_decay=0.01,
         logging_dir='./logs',
@@ -76,6 +85,11 @@ if __name__ == '__main__':
     )
 
     trainer.train()
+    trainer.save_model()
+    result = trainer.evaluate()
+    print(result)
+
+
 
     # optimizer = AdamW(model.parameters(),lr=1e-5)
 
